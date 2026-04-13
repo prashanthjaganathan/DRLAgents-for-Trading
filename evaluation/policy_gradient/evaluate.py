@@ -10,7 +10,7 @@ import pandas as pd
 from agents.policy_gradient.ppo import PPOAgent
 from agents.policy_gradient.reinforce import ReinforceAgent
 from agents.policy_gradient.reinforce_baseline import ReinforceBaselineAgent
-from envs.trading import TradingEnv
+from envs.trading_env import TradingEnv
 from features import OHLCVWithIndicators, RawOHLCV
 
 
@@ -96,16 +96,16 @@ def evaluate(env: TradingEnv, agent, n_episodes: int = 1):
 
 def buy_and_hold_baseline(env: TradingEnv) -> dict:
     """Buy on day 1, hold until the end. Simplest benchmark."""
-    obs, info = env.reset()
+    _obs, info = env.reset()
     done = False
 
     # buy immediately
-    obs, reward, done, _, info = env.step(TradingEnv.BUY)
+    _obs, _reward, done, _, info = env.step(TradingEnv.BUY)
     initial_value = info["portfolio_value"]
 
     # hold until end
     while not done:
-        obs, reward, done, _, info = env.step(TradingEnv.HOLD)
+        _obs, _reward, done, _, info = env.step(TradingEnv.HOLD)
 
     final_value = info["portfolio_value"]
     return {
