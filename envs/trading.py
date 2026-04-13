@@ -10,13 +10,14 @@ import pandas as pd
 from gymnasium import spaces
 
 from envs.rewards import RewardScheme
+from features.raw_ohlcv import RawOHLCV
 
 
 class TradingEnv(gym.Env):
     """
     Single-asset trading environment.
 
-    Observation: sliding window of normalized OHLCV data + current position.
+    Observation: built by a pluggable feature builder (RawOHLCV or OHLCVWithIndicators).
     Actions:     0 = Hold, 1 = Buy, 2 = Sell
     """
 
@@ -30,7 +31,8 @@ class TradingEnv(gym.Env):
     def __init__(
         self,
         df: pd.DataFrame,
-        window_size: int = 20,
+        feature_builder=None,
+        window_size: int = 30,
         initial_balance: float = 10_000.0,
         commission: float = 0.001,
         reward_scheme: str = "sharpe",
@@ -39,6 +41,8 @@ class TradingEnv(gym.Env):
         """
         Args:
             df:              DataFrame with columns ["Open", "High", "Low", "Close", "Volume"].
+            feature_builder: State builder instance (RawOHLCV or OHLCVWithIndicators).
+                             Defaults to RawOHLCV if not provided.
             window_size:     Number of past timesteps visible to the agent.
             initial_balance: Starting cash.
             commission:      Per-trade commission as a fraction (0.001 = 0.1%).
@@ -48,8 +52,17 @@ class TradingEnv(gym.Env):
         super().__init__()
 
         self._validate_df(df)
-        self.df = df.reset_index(drop=True)
+
+        # --- feature builder ---
+        self.feature_builder = feature_builder or RawOHLCV(window_size=window_size)
         self.window_size = window_size
+
+        # if the builder has a precompute step (e.g. technical indicators), run it
+        if hasattr(self.feature_builder, "precompute"):
+            self.df = self.feature_builder.precompute(df).reset_index(drop=True)
+        else:
+            self.df = df.reset_index(drop=True)
+
         self.initial_balance = initial_balance
         self.commission = commission
         self.render_mode = render_mode
@@ -57,9 +70,7 @@ class TradingEnv(gym.Env):
         self.reward_fn = RewardScheme(scheme=reward_scheme)
 
         # --- spaces ---
-        # observation: (window_size, 5) OHLCV + 1 scalar for position
-        # flattened into a single vector for MLP compatibility
-        obs_dim = window_size * 5 + 1  # +1 for current position flag
+        obs_dim = self.feature_builder.obs_dim
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
@@ -148,27 +159,30 @@ class TradingEnv(gym.Env):
         # HOLD or invalid buy/sell → no-op
 
     # ------------------------------------------------------------------
-    # Observation building
+    # Observation building (delegated to feature builder)
     # ------------------------------------------------------------------
 
     def _get_observation(self) -> np.ndarray:
-        start = self._current_step - self.window_size
-        end = self._current_step
+        position = 1.0 if self._shares_held > 0 else 0.0
+        return self.feature_builder.build(self.df, self._current_step, position)
 
-        window = self.df.iloc[start:end][["Open", "High", "Low", "Close", "Volume"]].values
+    def get_action_mask(self) -> np.ndarray:
+        """
+        Returns a boolean mask of valid actions at the current step.
 
-        # normalize OHLCV within the window (min-max per column)
-        col_min = window.min(axis=0)
-        col_max = window.max(axis=0)
-        denom = col_max - col_min
-        denom[denom == 0] = 1.0  # avoid division by zero
-        window_norm = (window - col_min) / denom
-
-        # position flag: 0.0 = flat, 1.0 = long
-        position = np.array([1.0 if self._shares_held > 0 else 0.0], dtype=np.float32)
-
-        obs = np.concatenate([window_norm.flatten(), position]).astype(np.float32)
-        return obs
+        [Hold, Buy, Sell]
+        - Hold is always valid
+        - Buy only valid when flat (no shares held)
+        - Sell only valid when holding shares
+        """
+        return np.array(
+            [
+                True,  # Hold: always valid
+                self._shares_held == 0,  # Buy: only when flat
+                self._shares_held > 0,  # Sell: only when holding
+            ],
+            dtype=bool,
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -188,6 +202,7 @@ class TradingEnv(gym.Env):
             "shares_held": self._shares_held,
             "portfolio_value": self._portfolio_value(price),
             "current_price": price,
+            "action_mask": self.get_action_mask(),
             "trade_log": self._trade_log,
         }
 
