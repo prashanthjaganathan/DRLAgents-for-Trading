@@ -1,29 +1,31 @@
-"""Evaluate a trained policy gradient agent on the test set."""
+"""Evaluate a trained PMDP Actor-Critic agent on the test set."""
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from agents.policy_gradient.ppo import PPOAgent
-from agents.policy_gradient.reinforce import ReinforceAgent
-from agents.policy_gradient.reinforce_baseline import ReinforceBaselineAgent
+from agents.partial_mdp.agent import PMDPAgent
 from envs.trading import TradingEnv
 from features import OHLCVWithIndicators, RawOHLCV
+from evaluation.policy_gradient.evaluate import buy_and_hold_baseline
 
 
-def evaluate(env: TradingEnv, agent, n_episodes: int = 1):
+def evaluate(env: TradingEnv, agent: PMDPAgent, n_episodes: int = 1) -> list[dict]:
     """
-    Run the agent on the test set with NO exploration (greedy actions).
-
+    Run the PMDP agent on the test set with NO exploration (greedy actions).
+    Provides consecutive step updates to the inner LSTM.
     Returns metrics for each episode.
     """
     results = []
 
     for ep in range(n_episodes):
         obs, info = env.reset()
+        agent.reset_hidden_state()
+        
         done = False
         ep_reward = 0.0
         daily_returns = []
@@ -34,14 +36,15 @@ def evaluate(env: TradingEnv, agent, n_episodes: int = 1):
             mask = info.get("action_mask")
 
             # --- greedy action (explore=False) ---
-            if isinstance(agent, PPOAgent):
-                action, _, _ = agent.select_action(obs, explore=False, action_mask=mask)
-            else:
-                action = agent.select_action(obs, explore=False, action_mask=mask)
+            action, _, _ = agent.select_action(obs, explore=False, action_mask=mask)
 
             prev_pv = info["portfolio_value"]
-            obs, reward, done, _, info = env.step(action)
+            next_obs, reward, done, _, info = env.step(action)
             ep_reward += reward
+            
+            # --- update LSTM State ---
+            agent.update_hidden_state(obs)
+            obs = next_obs
 
             # track daily return
             curr_pv = info["portfolio_value"]
@@ -94,31 +97,8 @@ def evaluate(env: TradingEnv, agent, n_episodes: int = 1):
     return results
 
 
-def buy_and_hold_baseline(env: TradingEnv) -> dict:
-    """Buy on day 1, hold until the end. Simplest benchmark."""
-    _obs, info = env.reset()
-    done = False
-
-    # buy immediately
-    _obs, _reward, done, _, info = env.step(TradingEnv.BUY)
-    initial_value = info["portfolio_value"]
-
-    # hold until end
-    while not done:
-        _obs, _reward, done, _, info = env.step(TradingEnv.HOLD)
-
-    final_value = info["portfolio_value"]
-    return {
-        "strategy": "Buy & Hold",
-        "initial_value": initial_value,
-        "final_value": final_value,
-        "cumulative_return": (final_value - initial_value) / initial_value,
-    }
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate trained agent on test set")
-    parser.add_argument("--agent", choices=["reinforce", "baseline", "ppo"], default="ppo")
+    parser = argparse.ArgumentParser(description="Evaluate trained PMDP agent on test set")
     parser.add_argument("--ticker", default="AAPL")
     parser.add_argument("--features", choices=["raw", "indicators"], default="raw")
     parser.add_argument("--reward", choices=["simple", "sharpe", "sortino"], default="sharpe")
@@ -127,7 +107,7 @@ if __name__ == "__main__":
 
     # --- load TEST data ---
     test_df = pd.read_csv(
-        f"data/processed/{args.ticker}_val.csv", index_col=0, parse_dates=["Date"]
+        f"data/processed/{args.ticker}_test.csv", index_col=0, parse_dates=["Date"]
     )
     print(f"Test set: {len(test_df)} days of {args.ticker}")
 
@@ -136,8 +116,8 @@ if __name__ == "__main__":
 
     # --- environment ---
     env = TradingEnv(df=test_df, feature_builder=fb, reward_scheme=args.reward)
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.n
+    obs_dim = int(env.observation_space.shape[0])
+    act_dim = int(env.action_space.n)
 
     # --- debug: print full state at step 20 ---
     obs, info = env.reset()  # starts at step = window_size (20)
@@ -210,19 +190,21 @@ if __name__ == "__main__":
     print("=" * 60 + "\n")
 
     # --- load agent ---
-    config = {"gamma": 0.99, "lr": 3e-4, "hidden": 128}
+    config = {
+        "gamma": 0.99,
+        "lr": 3e-4,
+        "lr_lstm": 1e-3,
+        "hidden": 128,
+        "clip_eps": 0.2,
+        "n_epochs": 10,
+        "batch_size": 64
+    }
 
-    if args.agent == "reinforce":
-        agent = ReinforceAgent(obs_dim, act_dim, config)
-    elif args.agent == "baseline":
-        agent = ReinforceBaselineAgent(obs_dim, act_dim, config)
-    else:
-        config.update({"clip_eps": 0.2, "n_epochs": 10, "batch_size": 64})
-        agent = PPOAgent(obs_dim, act_dim, config)
-
-    from pathlib import Path
+    agent = PMDPAgent(obs_dim, act_dim, config)
 
     agent.load(Path(args.checkpoint))
+    # Note: freeze predictor just in case to ensure we don't accidentally run train blocks (though torch no_grad on eval makes it safe anyway)
+    agent.freeze_predictor()
     print(f"Loaded checkpoint from {args.checkpoint}\n")
 
     # --- evaluate agent ---

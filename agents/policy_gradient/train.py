@@ -65,8 +65,9 @@ def train_ppo(
     obs, info = env.reset()
     ep = 0
     ep_reward = 0.0
+    step = 0
 
-    for step in range(n_episodes * rollout_steps):
+    while ep < n_episodes:
         mask = info.get("action_mask")
         action, log_prob, value = agent.select_action(obs, action_mask=mask)
         next_obs, reward, done, _, info = env.step(action)
@@ -109,6 +110,8 @@ def train_ppo(
                 print(
                     f"  PPO update | PL: {metrics['policy_loss']:.4f} | VL: {metrics['value_loss']:.4f} | Ent: {metrics['entropy']:.4f}"
                 )
+                
+        step += 1
 
     return history
 
@@ -131,9 +134,10 @@ if __name__ == "__main__":
     )
 
     # --- feature builder ---
-    fb = RawOHLCV(window_size=20) if args.features == "raw" else OHLCVWithIndicators(window_size=20)
+    fb = RawOHLCV(window_size=20) if args.features == "raw" else OHLCVWithIndicators(window_size=10)
 
     # --- environment ---
+    print("Size of the training dataset is:",train_df.shape)
     env = TradingEnv(df=train_df, feature_builder=fb, reward_scheme=args.reward)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
@@ -151,7 +155,7 @@ if __name__ == "__main__":
     elif args.agent == "ppo":
         config.update({"clip_eps": 0.2, "n_epochs": 10, "batch_size": 64})
         agent = PPOAgent(obs_dim, act_dim, config)
-        train_ppo(env, agent, args.episodes)
+        train_ppo(env, agent, args.episodes, rollout_steps=2048)
 
     # --- save checkpoint ---
     from pathlib import Path
