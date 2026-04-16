@@ -113,3 +113,49 @@ def plot_reward_comparison(
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Saved: {save_path}")
     plt.show()
+
+
+def plot_agent_vs_baselines(
+    val_metrics: dict[str, float],
+    test_metrics: dict[str, float],
+    metric_name: str = "Cumulative Return",
+    title: str = "Agent vs Baselines",
+    save_path: str | None = None,
+) -> None:
+    """
+    Bar chart comparing agent vs baselines on validation and test sets.
+    """
+    labels = list(val_metrics.keys())
+    val_vals = [val_metrics[l] * 100 for l in labels]  # percentage
+    test_vals = [test_metrics[l] * 100 for l in labels]
+
+    x = np.arange(len(labels))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars1 = ax.bar(x - width / 2, val_vals, width, label="Validation", color="#3498db")
+    bars2 = ax.bar(x + width / 2, test_vals, width, label="Test", color="#e74c3c")
+
+    ax.set_ylabel(f"{metric_name} (%)")
+    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
+    ax.grid(alpha=0.3, axis="y")
+    ax.axhline(y=0, color="black", lw=0.5)
+
+    def add_labels(bars):
+        for bar in bars:
+            h = bar.get_height()
+            offset = 3 if h >= 0 else -12
+            ax.annotate(f"{h:+.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                        xytext=(0, offset), textcoords="offset points", ha="center", fontsize=10)
+
+    add_labels(bars1)
+    add_labels(bars2)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Saved: {save_path}")
+    plt.show()

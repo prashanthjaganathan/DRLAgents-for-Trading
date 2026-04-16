@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--features", choices=["raw", "indicators"], default="raw")
     parser.add_argument(
         "--reward",
-        choices=["simple", "sharpe", "sortino", "action_simple", "action_sharpe", "action_sortino"],
+        choices=["simple", "sharpe", "sortino", "action_simple", "action_sharpe", "action_sortino", "event_based"],
         default="sharpe",
     )
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to checkpoint folder")
@@ -242,6 +242,18 @@ if __name__ == "__main__":
     bh = buy_and_hold_baseline(env)
     print(f"  Final Value:       ${bh['final_value']:,.2f}")
     print(f"  Cumulative Return: {bh['cumulative_return']:+.2%}")
+
+    # --- comparison ---
+    agent_ret = results[0]["cumulative_return"]
+    bh_ret = bh["cumulative_return"]
+    diff = agent_ret - bh_ret
+    print("\n" + "=" * 60)
+    print(f"Agent vs Buy & Hold: {diff:+.2%}")
+    if diff > 0:
+        print("Agent OUTPERFORMS Buy & Hold")
+    else:
+        print("Agent UNDERPERFORMS Buy & Hold")
+    print("=" * 60)
 
     # --- re-run agent to collect trade log for plotting ---
     obs, info = env.reset()
