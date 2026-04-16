@@ -159,3 +159,65 @@ def plot_agent_vs_baselines(
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Saved: {save_path}")
     plt.show()
+
+def _plot_single_set_bar(
+    metrics: dict[str, float],
+    baseline_value: float,
+    set_name: str,
+    ticker: str = "",
+    save_path: str | None = None,
+) -> None:
+    labels = list(metrics.keys())
+    values = [v * 100 for v in metrics.values()]
+    baseline_pct = baseline_value * 100
+
+    # shades of blue for each agent
+    blues = ["#1a3a5c", "#2e6b9e", "#5ba3d9", "#a0ccee"]
+    bar_colors = [blues[i % len(blues)] for i in range(len(labels))]
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    bars = ax.bar(labels, values, color=bar_colors, edgecolor="white", linewidth=0.5, width=0.4)
+
+    # Buy & Hold threshold line
+    ax.axhline(
+        y=baseline_pct, color="#e74c3c", lw=2, ls="--", zorder=4,
+        label=f"Buy & Hold ({baseline_pct:+.1f}%)",
+    )
+
+    for bar, val in zip(bars, values):
+        offset = 3 if val >= 0 else -15
+        ax.annotate(
+            f"{val:+.1f}%",
+            xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+            xytext=(0, offset),
+            textcoords="offset points",
+            ha="center", fontsize=11, fontweight="bold", color="#1a3a5c",
+        )
+
+    title = f"{set_name} Set — Cumulative Return"
+    if ticker:
+        title = f"{ticker} {title}"
+    ax.set_title(title, fontsize=13, fontweight="bold", color="#1a3a5c")
+    ax.set_ylabel("Cumulative Return (%)", color="#1a3a5c")
+    ax.tick_params(colors="#1a3a5c")
+    ax.grid(alpha=0.15, axis="y")
+    ax.axhline(y=0, color="#1a3a5c", lw=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(loc="upper right", fontsize=10)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Saved: {save_path}")
+    plt.show()
+
+
+def plot_val_vs_baseline(val_metrics, baseline_value, ticker="", save_path=None):
+    """Bar chart: agents vs baseline threshold on VALIDATION set."""
+    _plot_single_set_bar(val_metrics, baseline_value, "Validation", ticker, save_path)
+
+
+def plot_test_vs_baseline(test_metrics, baseline_value, ticker="", save_path=None):
+    """Bar chart: agents vs baseline threshold on TEST set."""
+    _plot_single_set_bar(test_metrics, baseline_value, "Test", ticker, save_path)
