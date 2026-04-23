@@ -113,8 +113,6 @@ def train_dqn_sliding(
     seed: int | None = None,
 ) -> list[dict]:
     """
-    Notebook-style sliding-window training (mirrors notebooks/DQN.ipynb).
-
     The total number of episodes is NOT specified explicitly; it's derived
     from the data length, `window_size`, `episode_length`, `episode_stride`,
     and `num_passes`:
@@ -124,7 +122,7 @@ def train_dqn_sliding(
         total_episodes = len(episode_starts) * num_passes
 
     Each episode deterministically starts at one of these offsets. Within a
-    pass the order is shuffled (for sample diversity, same as the notebook).
+    pass the order is shuffled (for sample diversity).
 
     This function does NOT modify `TradingEnv`. It reuses `env.reset()` for
     portfolio/bookkeeping resets, then overrides the episode start index
@@ -305,7 +303,7 @@ if __name__ == "__main__":
         default="random",
         help=(
             "'random': fixed n_episodes of random-start rollouts. "
-            "'sliding': notebook-style deterministic sliding-window episodes."
+            "'sliding': deterministic sliding-window episodes."
         ),
     )
     parser.add_argument("--episode_length", type=int, default=180)
@@ -324,7 +322,7 @@ if __name__ == "__main__":
     rb.add_argument("--per_beta_end", type=float, default=1.0)
     rb.add_argument("--per_beta_steps", type=int, default=100_000)
     rb.add_argument("--noisy_sigma", type=float, default=0.5)
-    rb.add_argument("--hidden_rainbow", type=int, default=128)
+    rb.add_argument("--hidden_rainbow", type=int, default=64)
 
     args = parser.parse_args()
 

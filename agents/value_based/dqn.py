@@ -154,7 +154,7 @@ class DQNAgent(BaseAgent):
         }
 
     def on_episode_end(self, episode: int, info: dict) -> None:
-        """Decay epsilon once per episode (matches the DQN notebook)."""
+        """Decay epsilon once per episode."""
         if self.epsilon > self.epsilon_min:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 

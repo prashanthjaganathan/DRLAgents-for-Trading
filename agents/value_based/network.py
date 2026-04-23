@@ -14,8 +14,7 @@ class QNetwork(nn.Module):
     """
     Maps observations to Q-values for each discrete action.
 
-    Mirrors the architecture used in the DQN notebook: an MLP with ReLU
-    activations between linear layers and a linear head over actions.
+    An MLP with ReLU activations between linear layers and a linear head over actions.
     """
 
     def __init__(

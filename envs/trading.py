@@ -191,7 +191,13 @@ class TradingEnv(gym.Env):
                 # Invalid action penalty (e.g. buying when already holding)
                 reward = -0.0001
         else:
-            reward = self.reward_fn.compute(self._returns, self._action_returns)
+            reward = self.reward_fn.compute(
+                self._returns,
+                self._action_returns,
+                portfolio_values=self._portfolio_values,
+                done=done,
+                initial_value=self.initial_balance,
+            )
 
         obs = self._get_observation()
         info = self._get_info()
@@ -204,17 +210,28 @@ class TradingEnv(gym.Env):
 
     def _execute(self, action: int, price: float) -> None:
         if action == self.BUY and self._shares_held == 0:
-            cost = price * (1 + self.commission)
-            max_shares = int(self._balance // cost)
+            # Calculate cost per share including commission
+            cost_per_share = price * (1 + self.commission)
+            # Floor division ensures we only buy what we can afford (shares + commission)
+            max_shares = int(self._balance // cost_per_share)
             if max_shares > 0:
-                self._shares_held = max_shares
-                self._balance -= max_shares * cost
-                self._entry_price = price
-                self._log_trade("BUY", price, max_shares)
+                total_cost = max_shares * cost_per_share
+                # Safety check: never spend more than available balance
+                if total_cost > self._balance:
+                    max_shares = int(self._balance / cost_per_share)
+                    total_cost = max_shares * cost_per_share
+                if max_shares > 0 and total_cost <= self._balance:
+                    self._shares_held = max_shares
+                    self._balance -= total_cost
+                    self._entry_price = price
+                    self._log_trade("BUY", price, max_shares)
 
         elif action == self.SELL and self._shares_held > 0:
-            revenue = self._shares_held * price * (1 - self.commission)
-            self._balance += revenue
+            # Calculate gross revenue and deduct commission
+            gross_revenue = self._shares_held * price
+            commission_cost = gross_revenue * self.commission
+            net_revenue = gross_revenue - commission_cost
+            self._balance += net_revenue
             self._log_trade("SELL", price, self._shares_held)
             self._shares_held = 0
             self._entry_price = 0.0
