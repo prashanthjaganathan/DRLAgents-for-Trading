@@ -20,3 +20,4 @@ dqn_models/
 models/
 double_dqn_models/
 .cursor/
+.claude/
